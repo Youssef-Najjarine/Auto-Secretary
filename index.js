@@ -1839,7 +1839,13 @@
         showToast("Export is a prototype stub for now.", "");
         break;
       case "build-flow":
-        showToast("Flow builder is next on the roadmap.", "");
+        var sess = applicationState.session;
+        if (sess && (sess.role === 'developer' || sess.role === 'consultant')) {
+          // open the local Flow Editor for devs/consultants
+          location.href = 'flow-editor.html';
+        } else {
+          showToast("Flow builder is next on the roadmap.", "");
+        }
         break;
       case "add-client":
         showToast("Client onboarding wizard coming soon.", "");
