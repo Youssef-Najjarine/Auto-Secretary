@@ -1,0 +1,19 @@
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:0;background:#f6f7fb;color:#0f172a}
+.header{padding:18px 24px;background:#fff;border-bottom:1px solid #e6e9ef;display:flex;align-items:center;gap:12px}
+.container{display:grid;grid-template-columns:260px 1fr 360px;gap:16px;padding:18px}
+.panel{background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:12px}
+.catalog .step{padding:8px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.catalog .step:hover{background:#f3f4f6}
+.canvas{min-height:360px;padding:12px}
+.canvas .node{padding:12px;border:1px dashed #cbd5e1;border-radius:6px;margin-bottom:8px;background:#fff}
+.editor .field{margin-bottom:10px}
+.editor label{display:block;font-size:13px;color:#374151;margin-bottom:6px}
+.input,textarea,select{width:100%;padding:8px;border:1px solid #e6e9ef;border-radius:6px}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.btn{background:#4F46E5;color:#fff;padding:8px 10px;border-radius:6px;border:none;cursor:pointer}
+.btn.ghost{background:transparent;color:#374151;border:1px solid #e6e9ef}
+.status-ok{color:green;font-weight:600}
+.status-bad{color:#b91c1c;font-weight:600}
+.json-area{height:220px;font-family:monospace;font-size:13px}
+.footer-hint{font-size:13px;color:#6b7280;margin-top:10px}

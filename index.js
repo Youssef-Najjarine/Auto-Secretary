@@ -258,7 +258,9 @@
     execExpandedIds: {},
     execSelectedIds: {},
     cachedExecutionsFlowId: null,
-    cachedExecutions: null
+    cachedExecutions: null,
+    diagnosticsClientFilter: "all",
+    diagnosticsFlowFilter: "all"
   };
 
   function clientById(id) {
@@ -361,14 +363,20 @@
   function topbarAuthed(activeView) {
     var session = applicationState.session;
     function navLink(view, href, label, iconName) {
-      var active = view === activeView ? " active" : "";
+        var active = view === activeView ? " active" : ""; // Maintain active class for the current view
       return '<a class="nav-link' + active + '" href="' + href + '">' + icon(iconName, "icon-sm") + label + "</a>";
     }
     var nav = '<nav class="topbar-nav">'
-      + navLink("dashboard", "#/dashboard", "Dashboard", "grid")
-      + navLink("flows", "#/flows", "Flows", "boltSquare")
-      + navLink("report", "#/report", "Reports", "chart")
-      + '<button class="nav-link" data-action="open-support" type="button">' + icon("support", "icon-sm") + "Support</button>"
+      + navLink("dashboard", "#/dashboard", "Dashboard", "grid");
+    // If developer is active, make the Flows button act as Diagnostics (label, href, and active state)
+    var isDev = session && session.role === 'developer';
+    var flowsViewName = isDev ? 'diagnostics' : 'flows';
+    var flowsHref = isDev ? '#/diagnostics' : '#/flows';
+    var flowsLabel = isDev ? 'Diagnostics' : 'Flows';
+    var flowsIcon = isDev ? 'search' : 'boltSquare';
+    nav += navLink(flowsViewName, flowsHref, flowsLabel, flowsIcon)
+      + navLink("report", "#/report", "Reports", "chart");
+    nav += '<button class="nav-link" data-action="open-support" type="button">' + icon("support", "icon-sm") + "Support</button>"
       + "</nav>";
     var profile = '<div class="profile-chip">'
       + '<div class="profile-meta"><div class="profile-name">' + session.displayName + '</div><div class="profile-role">' + roleLabels[session.role] + "</div></div>"
@@ -416,7 +424,7 @@
       + '<h1>Everything a secretary does, <span class="accent">handled for you.</span></h1>'
       + '<p class="lede">Auto Secretary triages email, schedules meetings, files paperwork, and chases invoices, then shows you exactly how many hours and dollars it saves.</p>'
       + '<div class="hero-actions"><a class="btn btn-primary btn-lg" href="#/login">Log in to your dashboard' + icon("arrowRight", "icon-sm") + '</a><a class="btn btn-ghost btn-lg" href="#/login">See a live report</a></div>'
-      + '<div class="hero-trust"><span><strong>21,000+</strong> tasks run weekly</span><span><strong>99.2%</strong> success rate</span><span><strong>4.8 hrs</strong> saved per day, on average</span></div></div>'
+        + '<div class="hero-trust"><span><strong>21,000+</strong> tasks run weekly</span><span><strong>99.2%</strong> success rate</span><span><strong>4.8 hrs</strong> saved per day, on average</span></div></div>' // Updated hero trust section
       + '<div class="hero-card"><div class="hero-card-top"><span class="badge badge-indigo">' + icon("spark", "icon-sm") + 'This month</span><span class="badge badge-active"><span class="dot dot-active"></span>All flows healthy</span></div>'
       + '<div class="hero-savings">$48,200</div><div class="hero-savings-label">saved this year &middot; 28.5 hours / week given back</div>'
       + '<div class="hero-bars">' + heroBars + "</div></div>"
@@ -1182,6 +1190,11 @@
     else if (dateFilter === "30d") dateCutoffMinutes = 30 * 24 * 60;
     else dateCutoffMinutes = Infinity;
     return executions.filter(function (execution) {
+      // diagnostics-specific filters (optional)
+      var clientFilter = applicationState.diagnosticsClientFilter;
+      var flowFilter = applicationState.diagnosticsFlowFilter;
+      if (clientFilter && clientFilter !== "all" && execution.clientId !== clientFilter) return false;
+      if (flowFilter && flowFilter !== "all" && execution.flowId !== flowFilter) return false;
       if (statusFilter !== "all" && execution.status !== statusFilter) return false;
       if (triggerFilter !== "all" && execution.trigger !== triggerFilter) return false;
       if (execution.minutesAgo > dateCutoffMinutes) return false;
@@ -1294,34 +1307,61 @@
       var stepLabel = step.status === "running" ? "in progress" : formatDurationSeconds(step.durationSeconds);
       return '<div class="exec-step' + stepClass + '"><div class="step-title">' + escapeHtml(step.name) + "</div><div class=\"step-meta\">" + stepLabel + "</div></div>";
     }).join("");
-    var rightBlock;
-    if (execution.errorMessage) {
-      rightBlock = '<div><h4>Error</h4><div class="exec-detail-block error">' + escapeHtml(execution.errorMessage) + "</div>"
-        + '<div class="exec-detail-meta">'
-        + '<div><div class="l">Execution ID</div><div class="v">' + execution.id + "</div></div>"
-        + '<div><div class="l">Triggered by</div><div class="v">' + escapeHtml(execution.triggeredBy) + "</div></div>"
-        + "</div>"
-        + '<div class="exec-expand-actions">'
-        + '<button class="btn btn-soft btn-sm" data-action="rerun-execution" data-execution="' + execution.id + '" type="button">' + icon("refresh", "icon-sm") + "Re-run</button>"
-        + '<button class="btn btn-ghost btn-sm" data-action="copy-execution-id" data-execution="' + execution.id + '" type="button">' + icon("copy", "icon-sm") + "Copy ID</button>"
-        + '<button class="btn btn-ghost btn-sm" data-action="open-support" type="button">' + icon("support", "icon-sm") + "Contact support</button>"
-        + "</div></div>";
+
+    var canDebug = applicationState.session && applicationState.session.role !== 'client';
+    var debugBtn = canDebug ? ('<button class="btn btn-primary btn-sm" data-action="debug-execution" data-execution="' + execution.id + '" data-flow="' + execution.flowId + '" type="button">' + icon('spark', 'icon-sm') + 'Debug run</button>') : '';
+
+    var rightBlock = '';
+    if (execution.errorMessage || execution.status === 'failed') {
+      var btText = escapeHtml(execution.errorMessage || 'Unknown error');
+      rightBlock = "<div>" +
+        "<h4>Error</h4>" +
+        "<div class=\"exec-detail-block error\">" + btText + "</div>" +
+        "<div class=\"exec-detail-meta\">" +
+          "<div><div class=\"l\">Execution ID</div><div class=\"v\">" + execution.id + "</div></div>" +
+          "<div><div class=\"l\">Triggered by</div><div class=\"v\">" + escapeHtml(execution.triggeredBy) + "</div></div>" +
+        "</div>" +
+        "<div class=\"exec-expand-actions\">" +
+          "<button class=\"btn btn-soft btn-sm\" data-action=\"rerun-execution\" data-execution=\"" + execution.id + "\" type=\"button\">" + icon("refresh", "icon-sm") + "Re-run</button>" +
+          "<button class=\"btn btn-ghost btn-sm\" data-action=\"copy-execution-id\" data-execution=\"" + execution.id + "\" type=\"button\">" + icon("copy", "icon-sm") + "Copy ID</button>" +
+          "<button class=\"btn btn-ghost btn-sm\" data-action=\"open-support\" type=\"button\">" + icon("support", "icon-sm") + "Contact support</button>" +
+          debugBtn +
+        "</div></div>";
     } else {
-      var outputText = execution.summary + "\n\nItems processed: " + execution.itemsProcessed + "\nTotal duration: " + formatDurationSeconds(execution.durationSeconds);
-      rightBlock = '<div><h4>Output summary</h4><div class="exec-detail-block">' + escapeHtml(outputText) + "</div>"
-        + '<div class="exec-detail-meta">'
-        + '<div><div class="l">Execution ID</div><div class="v">' + execution.id + "</div></div>"
-        + '<div><div class="l">Triggered by</div><div class="v">' + escapeHtml(execution.triggeredBy) + "</div></div>"
-        + "</div>"
-        + '<div class="exec-expand-actions">'
-        + '<button class="btn btn-soft btn-sm" data-action="rerun-execution" data-execution="' + execution.id + '" type="button">' + icon("refresh", "icon-sm") + "Re-run</button>"
-        + '<button class="btn btn-ghost btn-sm" data-action="copy-execution-id" data-execution="' + execution.id + '" type="button">' + icon("copy", "icon-sm") + "Copy ID</button>"
-        + "</div></div>";
+      var outputText = escapeHtml(execution.summary + "\n\nItems processed: " + execution.itemsProcessed + "\nTotal duration: " + formatDurationSeconds(execution.durationSeconds));
+      rightBlock = "<div>" +
+        "<h4>Output summary</h4>" +
+        "<div class=\"exec-detail-block\">" + outputText + "</div>" +
+        "<div class=\"exec-detail-meta\">" +
+          "<div><div class=\"l\">Execution ID</div><div class=\"v\">" + execution.id + "</div></div>" +
+          "<div><div class=\"l\">Triggered by</div><div class=\"v\">" + escapeHtml(execution.triggeredBy) + "</div></div>" +
+        "</div>" +
+        "<div class=\"exec-expand-actions\">" +
+          "<button class=\"btn btn-soft btn-sm\" data-action=\"rerun-execution\" data-execution=\"" + execution.id + "\" type=\"button\">" + icon("refresh", "icon-sm") + "Re-run</button>" +
+          "<button class=\"btn btn-ghost btn-sm\" data-action=\"copy-execution-id\" data-execution=\"" + execution.id + "\" type=\"button\">" + icon("copy", "icon-sm") + "Copy ID</button>" +
+          debugBtn +
+        "</div></div>";
     }
-    return '<div class="exec-expand">'
-      + '<div><h4>Timeline</h4><div class="exec-timeline">' + stepsHtml + "</div></div>"
-      + rightBlock
-      + "</div>";
+
+    var backtraceHtml = "";
+    if ((execution.errorMessage || execution.status === 'failed') && canDebug) {
+      var bt = execution.backtrace || generateBacktrace(execution);
+      backtraceHtml = '<div style="margin-top:12px"><h4>Backtrace</h4><pre class="exec-backtrace" style="white-space:pre-wrap;max-height:220px;overflow:auto;padding:12px;border-radius:6px;background:var(--surface);border:1px solid var(--border);">' + escapeHtml(bt) + "</pre></div>";
+    }
+
+    return '<div class="exec-expand">' +
+      '<div><h4>Timeline</h4><div class="exec-timeline">' + stepsHtml + '</div></div>' +
+      rightBlock +
+      backtraceHtml +
+      '</div>';
+  }
+
+  function generateBacktrace(execution) {
+    var header = execution.errorMessage ? execution.errorMessage : 'Execution failed';
+    var frames = execution.steps.slice().reverse().map(function (s, idx) {
+      return 'at ' + s.name + ' (step ' + (execution.steps.length - idx) + ')';
+    }).slice(0, 8);
+    return header + '\n' + frames.join('\n') + '\n    at runExecution (runtime.js:42:13)';
   }
 
   function executionRowHtml(execution, maxDurationSeconds, totalColumnCount) {
@@ -1351,6 +1391,7 @@
       + '<td><div class="row-actions">'
       + '<button class="flow-icon-btn" data-action="rerun-execution" data-execution="' + execution.id + '" type="button" aria-label="Re-run" title="Re-run">' + icon("refresh", "icon-sm") + "</button>"
       + '<button class="flow-icon-btn" data-action="copy-execution-id" data-execution="' + execution.id + '" type="button" aria-label="Copy ID" title="Copy ID">' + icon("copy", "icon-sm") + "</button>"
+      + '<button class="flow-icon-btn" data-action="open-execution-detail" data-execution="' + execution.id + '" data-flow="' + execution.flowId + '" type="button" aria-label="Open details" title="Open details">' + icon("arrowRight", "icon-sm") + "</button>"
       + "</div></td>"
       + "</tr>";
     if (!isExpanded) return mainRow;
@@ -1474,6 +1515,102 @@
       + "</main>";
   }
 
+  function viewDiagnostics() {
+    var role = applicationState.session.role;
+    var headerTopbar = topbarAuthed("flows");
+    if (role !== "developer" && role !== "consultant") {
+      var body = '<a class="back-link" href="#/dashboard">' + icon("arrowLeft", "icon-sm") + 'Back to dashboard</a>'
+        + '<div class="exec-empty">' + icon("users") + '<h3>Switch to the developer account</h3><p>The diagnostics view is available to consultants and developers only. Use the demo developer login to explore it.</p></div>';
+      return headerTopbar + '<main class="page">' + body + '</main>';
+    }
+    // gather executions across scoped clients and flows
+    var clientsToScan = scopedClients();
+    var allExecutions = [];
+    clientsToScan.forEach(function (client) {
+      client.flows.forEach(function (flow) {
+        var execs = generateExecutionsForFlow(flow).slice(0, 30).map(function (e) { e.clientId = client.id; e.company = client.company; e.flowName = flow.name; e.flowId = flow.id; return e; });
+        allExecutions = allExecutions.concat(execs);
+      });
+    });
+    var filteredExecutions = filterExecutionList(allExecutions);
+    var sortedExecutions = sortExecutionList(filteredExecutions);
+    var totalItems = sortedExecutions.length;
+    // pagination for diagnostics uses same execPage and execPageSize
+    var totalPages = Math.max(1, Math.ceil(totalItems / applicationState.execPageSize));
+    if (applicationState.execPage > totalPages) applicationState.execPage = totalPages;
+    var pageStart = (applicationState.execPage - 1) * applicationState.execPageSize;
+    var pagedExecutions = sortedExecutions.slice(pageStart, pageStart + applicationState.execPageSize);
+    var maxDurationSeconds = Math.max(1, sortedExecutions.reduce(function (currentMax, execution) { return Math.max(currentMax, execution.durationSeconds); }, 1));
+    var totalColumnCount = 11;
+    var tableDensityClass = applicationState.execDensity === "compact" ? " compact" : "";
+    var tableRowsHtml = pagedExecutions.map(function (execution) { return executionRowHtml(execution, maxDurationSeconds, totalColumnCount); }).join("");
+    var emptyRowHtml = pagedExecutions.length === 0 ? '<tr><td colspan="' + totalColumnCount + '"><div class="exec-empty" style="border:none;box-shadow:none;background:transparent;padding:50px 20px">' + icon("search") + '<h3>No executions match your filters</h3><p>Try clearing the search or switching the status chip back to \u201cAll\u201d.</p></div></td></tr>' : "";
+
+    var clientOptions = '<option value="all">All clients</option>' + scopedClients().map(function (c) { return '<option value="' + c.id + '"' + (applicationState.diagnosticsClientFilter === c.id ? ' selected' : '') + '>' + escapeHtml(c.company) + '</option>'; }).join("");
+
+    var header = '<a class="back-link" href="#/dashboard">' + icon("arrowLeft", "icon-sm") + 'Back to dashboard</a>'
+      + '<div class="page-head"><div><p class="eyebrow">Diagnostics</p><h1 class="page-title">Consultant diagnostic log</h1><p class="page-sub">Recent executions across assigned clients. Use filters to narrow by client, flow, or status.</p></div></div>';
+
+    var toolArea = '<div class="flows-toolbar" style="margin-bottom:12px">'
+      + '<select class="toolbar-select" data-action="diagnostics-client">' + clientOptions + '</select>'
+      + executionToolbar()
+      + '</div>';
+
+    return headerTopbar + '<main class="page">' + header + executionStatsStrip(filteredExecutions, { hoursPerWeekSaved: 0, runsTotal: 0, successRate: 0 }) + toolArea + bulkActionBarHtml()
+      + '<div class="exec-tbl"><div class="exec-tbl-scroll"><table class="exec-tbl-inner' + tableDensityClass + '"><thead><tr>'
+      + '<th class="check-cell"><input type="checkbox" data-action="toggle-select-all"' + (pagedExecutions.length > 0 && pagedExecutions.every(function (execution) { return applicationState.execSelectedIds[execution.id]; }) ? " checked" : "") + ' /></th>'
+      + '<th class="expand-cell"></th>'
+      + sortableHeaderCell("status", "Status")
+      + sortableHeaderCell("started", "Started")
+      + '<th>Summary</th>'
+      + sortableHeaderCell("trigger", "Trigger")
+      + sortableHeaderCell("items", "Items", "num")
+      + sortableHeaderCell("duration", "Duration")
+      + '<th>Execution ID</th>'
+      + '<th>Client / Flow</th>'
+      + '<th></th>'
+      + '</tr></thead><tbody>'
+      + tableRowsHtml
+      + emptyRowHtml
+      + '</tbody></table></div>'
+      + paginationHtml(totalItems)
+      + '</div></main>';
+  }
+
+  function viewExecutionDetail(flowId, executionId) {
+    var role = applicationState.session.role;
+    var headerTopbar = topbarAuthed("flows");
+    var lookup = flowById(flowId);
+    if (!lookup) {
+      return headerTopbar + '<main class="page">' + '<a class="back-link" href="#/flows">' + icon("arrowLeft", "icon-sm") + 'Back to flows</a>' + '<div class="exec-empty">' + icon("alert") + '<h3>Execution not found</h3><p>That execution or flow does not exist.</p></div>' + '</main>';
+    }
+    var flow = lookup.flow;
+    var client = lookup.client;
+    // permission: clients may view only their own flows
+    if (applicationState.session.role === 'client' && applicationState.session.clientId !== client.id) {
+      return headerTopbar + '<main class="page">' + '<a class="back-link" href="#/flows">' + icon("arrowLeft", "icon-sm") + 'Back to flows</a>' + '<div class="exec-empty">' + icon("alert") + '<h3>Not authorized</h3><p>You do not have access to this execution.</p></div>' + '</main>';
+    }
+    var allExecutions = generateExecutionsForFlow(flow);
+    var execution = allExecutions.find(function (e) { return e.id === executionId; });
+    if (!execution) {
+      return headerTopbar + '<main class="page">' + '<a class="back-link" href="#/flows/' + flow.id + '/executions">' + icon("arrowLeft", "icon-sm") + 'Back to executions</a>' + '<div class="exec-empty">' + icon("search") + '<h3>Execution not found</h3><p>That execution is not in the generated feed for this flow.</p></div>' + '</main>';
+    }
+
+    var hero = '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' + statusBadge(execution.status) + '<h1 class="page-title">Execution detail</h1></div>'
+      + '<p class="page-sub">' + escapeHtml(flow.name) + ' &middot; ' + client.company + ' &middot; ' + formatDateTime(execution.minutesAgo) + '</p>';
+
+    var actions = '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      + '<button class="btn btn-soft" data-action="rerun-execution" data-execution="' + execution.id + '" type="button">' + icon('refresh', 'icon-sm') + 'Re-run</button>'
+      + '<button class="btn btn-ghost" data-action="copy-execution-id" data-execution="' + execution.id + '" type="button">' + icon('copy', 'icon-sm') + 'Copy ID</button>'
+      + '<button class="btn btn-ghost" data-action="export-execution-csv" data-execution="' + execution.id + '" data-flow="' + flow.id + '" type="button">' + icon('download', 'icon-sm') + 'Export CSV</button>'
+      + '</div>';
+
+    return headerTopbar + '<main class="page">' + '<a class="back-link" href="#/flows/' + flow.id + '/executions">' + icon("arrowLeft", "icon-sm") + 'Back to executions</a>'
+      + '<div class="page-head"><div><p class="eyebrow">Execution</p><h1 class="page-title">' + escapeHtml(flow.name) + '</h1><p class="page-sub">' + client.company + '</p></div><div>' + actions + '</div></div>'
+      + '<div class="card"><div class="card-pad">' + expandedRowContentHtml(execution) + '</div></div>'
+      + '</main>';
+  }
+
   // ============================================================
   // MODALS / TOASTS / SCROLL LOCK
   // ============================================================
@@ -1552,6 +1689,22 @@
       + '</div>'
       + '<div class="modal-foot"><button class="btn btn-danger-soft" data-action="close-modal" type="button">' + icon("pause", "icon-sm") + 'Pause this flow</button><div style="flex:1"></div><button class="btn btn-ghost" data-action="close-modal" type="button">Cancel</button><button class="btn btn-primary" data-action="save-flow-settings" type="button">Save changes</button></div>'
     );
+  }
+
+  function openDebugModal(executionId, flowId) {
+    var lookup = flowById(flowId);
+    var flowName = lookup ? escapeHtml(lookup.flow.name) : 'Flow';
+    var body = `
+      <div class="modal-head"><div><h3>Debug run</h3><p>Run this execution in debug mode with reduced side effects.</p></div>
+      <button class="modal-close" data-action="close-modal" type="button" aria-label="Close">${icon("close", "icon-sm")}</button></div>
+      <div class="modal-body">
+        <p><strong>Execution:</strong> ${executionId} &middot; ${flowName}</p>
+        <div class="field"><label>Debug level</label><div style="display:flex;gap:8px"><label><input type="radio" name="debugMode" value="safe" checked /> Safe (no external side effects)</label><label><input type="radio" name="debugMode" value="staged" /> Staged (limited side effects)</label></div></div>
+        <div style="margin-top:8px;color:var(--muted);font-size:13px">In debug mode the system will simulate external actions (emails, calendar invites) rather than performing them.</div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-action="close-modal" type="button">Cancel</button>
+      <button class="btn btn-primary" data-action="start-debug-run" data-execution="${executionId}" data-flow="${flowId}" type="button">Start debug run</button></div>`;
+    openModal(body);
   }
 
   function showToast(message, variant) {
@@ -1686,7 +1839,13 @@
         showToast("Export is a prototype stub for now.", "");
         break;
       case "build-flow":
-        showToast("Flow builder is next on the roadmap.", "");
+        var sess = applicationState.session;
+        if (sess && (sess.role === 'developer' || sess.role === 'consultant')) {
+          // open the local Flow Editor for devs/consultants
+          location.href = 'flow-editor.html';
+        } else {
+          showToast("Flow builder is next on the roadmap.", "");
+        }
         break;
       case "add-client":
         showToast("Client onboarding wizard coming soon.", "");
@@ -1755,12 +1914,49 @@
       case "rerun-execution":
         showToast("Re-running execution \u2014 a new entry will appear shortly.", "success");
         break;
+      case "debug-execution":
+        var dbgExec = trigger.getAttribute("data-execution");
+        var dbgFlow = trigger.getAttribute("data-flow");
+        openDebugModal(dbgExec, dbgFlow);
+        break;
       case "copy-execution-id":
         var executionIdToCopy = trigger.getAttribute("data-execution");
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(executionIdToCopy);
         }
         showToast("Execution ID copied to clipboard.", "success");
+        break;
+      case "open-execution-detail":
+        var execIdNav = trigger.getAttribute("data-execution");
+        var flowIdNav = trigger.getAttribute("data-flow");
+        if (flowIdNav && execIdNav) location.hash = "#/flows/" + flowIdNav + "/executions/" + execIdNav;
+        break;
+      case "export-execution-csv":
+        var expId = trigger.getAttribute("data-execution");
+        var expFlow = trigger.getAttribute("data-flow");
+        if (expFlow && expId) {
+          var lookupExp = flowById(expFlow);
+          if (lookupExp) {
+            var execList = generateExecutionsForFlow(lookupExp.flow);
+            var execToExport = execList.find(function (e) { return e.id === expId; });
+            if (execToExport) {
+              var csv = 'step,status,durationSeconds\n' + execToExport.steps.map(function (s) { return '"' + s.name.replace(/"/g, '""') + '","' + s.status + '",' + s.durationSeconds; }).join('\n');
+              var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+              var url = URL.createObjectURL(blob);
+              var a = document.createElement('a'); a.href = url; a.download = expId + '.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+            }
+          }
+        }
+        showToast('CSV exported (prototype).', 'success');
+        break;
+      case "start-debug-run":
+        var startExec = trigger.getAttribute("data-execution") || trigger.getAttribute("data-exec") || trigger.getAttribute("data-execution-id");
+        var startFlow = trigger.getAttribute("data-flow");
+        // read selected debug mode from modal
+        var selected = document.querySelector('.modal [name="debugMode"]:checked');
+        var mode = selected ? selected.value : 'safe';
+        closeModal();
+        showToast('Started debug run (' + mode + '). No external side effects.', 'success');
         break;
       case "bulk-rerun":
         showToast("Re-running " + Object.keys(applicationState.execSelectedIds).length + " executions.", "success");
@@ -1827,6 +2023,10 @@
       applicationState.execPageSize = parseInt(target.value, 10);
       applicationState.execPage = 1;
       render();
+    } else if (action === "diagnostics-client") {
+      applicationState.diagnosticsClientFilter = target.value;
+      applicationState.execPage = 1;
+      render();
     } else if (action === "toggle-select") {
       var selectionId = target.getAttribute("data-execution");
       if (target.checked) applicationState.execSelectedIds[selectionId] = true;
@@ -1890,13 +2090,13 @@
     var rawHash = location.hash.replace(/^#\/?/, "");
     if (!rawHash) return { name: "home", param: null, subParam: null };
     var parts = rawHash.split("/");
-    return { name: parts[0], param: parts[1] || null, subParam: parts[2] || null };
+    return { name: parts[0], param: parts[1] || null, subParam: parts[2] || null, subSubParam: parts[3] || null };
   }
 
   function render() {
     var route = parseHash();
     var session = applicationState.session;
-    var protectedRoutes = ["dashboard", "report", "flows"];
+    var protectedRoutes = ["dashboard", "report", "flows", "diagnostics"];
     if (protectedRoutes.indexOf(route.name) !== -1 && !session) {
       location.hash = "#/login";
       return;
@@ -1910,7 +2110,9 @@
     if (route.name === "login") html = viewLogin();
     else if (route.name === "dashboard") html = viewDashboard();
     else if (route.name === "report") html = viewReport(route.param);
-    else if (route.name === "flows" && route.param && route.subParam === "executions") html = viewExecutions(route.param);
+    else if (route.name === "diagnostics") html = viewDiagnostics();
+    else if (route.name === "flows" && route.param && route.subParam === "executions" && !route.subSubParam) html = viewExecutions(route.param);
+    else if (route.name === "flows" && route.param && route.subParam === "executions" && route.subSubParam) html = viewExecutionDetail(route.param, route.subSubParam);
     else if (route.name === "flows") html = viewFlows();
     else html = viewHome();
     appElement.innerHTML = html;

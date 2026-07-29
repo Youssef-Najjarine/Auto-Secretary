@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Flow Editor — Dev</title>
+  <link rel="stylesheet" href="flow-editor.css" />
+</head>
+<body>
+  <header class="header"><h2 style="margin:0">Flow Editor (Dev/Consultant)</h2><div style="margin-left:auto;color:#6b7280">Visible only when ?role=developer or consultant</div></header>
+  <div class="container">
+    <aside class="panel catalog">
+      <h3 style="margin-top:0">Step Catalog</h3>
+      <div id="catalogList"></div>
+      <div style="margin-top:12px"><button id="addSample" class="btn ghost">Add sample flow</button></div>
+      <div class="footer-hint">Catalog items show expected input/output types.</div>
+    </aside>
+
+    <main class="panel canvas">
+      <div class="toolbar"><button id="validateBtn" class="btn">Validate flow</button><button id="runBtn" class="btn ghost">Run (simulate)</button><label style="margin-left:auto">Editor mode: <select id="editorMode"><option value="form">Form</option><option value="json">JSON</option></select></label></div>
+      <div id="canvasList"></div>
+      <div id="validationResult" style="margin-top:12px;font-weight:600"></div>
+    </main>
+
+    <aside class="panel editor">
+      <h3 style="margin-top:0">Step Details / Flow JSON</h3>
+      <div id="formEditor"></div>
+      <textarea id="jsonEditor" class="json-area" style="display:none" aria-label="Flow JSON"></textarea>
+      <div style="margin-top:8px;display:flex;gap:8px"><button id="saveJson" class="btn">Save JSON</button><button id="exportJson" class="btn ghost">Export JSON</button></div>
+      <div class="footer-hint">Define flows using the form editor or paste a full JSON flow on the right and click Save.</div>
+    </aside>
+  </div>
+  <script src="flow-editor.js" defer></script>
+</body>
+</html>
